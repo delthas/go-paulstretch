@@ -1,0 +1,21 @@
+image: archlinux
+packages:
+  - gcc
+  - meson
+  - fftw
+  - go
+sources:
+  - https://github.com/delthas/libpaulstretch
+  - https://github.com/delthas/go-paulstretch
+tasks:
+  - setup: |
+      cd libpaulstretch
+      meson build/
+      ninja -C build/
+      sudo ninja -C build/ install
+  - build: |
+      cd go-paulstretch
+      PKG_CONFIG_PATH=/usr/local/lib/pkgconfig go build -v -o simple ./example/simple
+  - test: |
+      cd go-paulstretch
+      LD_LIBRARY_PATH=/usr/local/lib ./simple -input example/simple/sample.raw -output example/simple/stretched.raw

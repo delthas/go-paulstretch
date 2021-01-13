@@ -19,7 +19,9 @@ package paulstretch
 // #include <paulstretch.h>
 import "C"
 import (
+	"fmt"
 	"io"
+	"os"
 	"reflect"
 	"runtime"
 	"sync"
@@ -112,14 +114,18 @@ func (p *Paulstretch) Write(data []byte) (int, error) {
 			Cap:  len(buf) / 4,
 		}
 		samples := *(*[]C.float)(unsafe.Pointer(&sh))
+		fmt.Fprintln(os.Stderr, "write: waiting for permit")
 		<-p.writePermit
+		fmt.Fprintln(os.Stderr, "write: got permit")
 		p.rwCond.L.Lock()
 		if p.closed {
 			p.rwCond.L.Unlock()
 			return n, io.EOF
 		}
 		C.paulstretch_write(p.ps, &samples[0])
+		fmt.Fprintln(os.Stderr, "write: after paulstretrch_write")
 		p.rwCond.Signal()
+		fmt.Fprintln(os.Stderr, "write: wrote, unlocking")
 		p.rwCond.L.Unlock()
 		n += c
 	}
@@ -161,21 +167,27 @@ func (p *Paulstretch) Read(data []byte) (int, error) {
 	}
 	p.rwCond.L.Lock()
 	var outSamples *C.float
+	fmt.Fprintln(os.Stderr, "read: checking available")
 	available := C.paulstretch_read(p.ps, &outSamples)
 	for !available {
 		if p.closed {
+			fmt.Fprintln(os.Stderr, "read: closed")
 			p.rwCond.L.Unlock()
 			return 0, io.EOF
 		}
 		select {
 		// add a write permit if none is currently pending
 		case p.writePermit <- struct{}{}:
+			fmt.Fprintln(os.Stderr, "read: sent permit")
 		default:
+			fmt.Fprintln(os.Stderr, "read: sent no permit")
 		}
 		p.rwCond.Wait()
+		fmt.Fprintln(os.Stderr, "read: waited for signal, checking avbilable")
 		available = C.paulstretch_read(p.ps, &outSamples)
 	}
 	p.rwCond.L.Unlock()
+	fmt.Fprintln(os.Stderr, "read: available, unlocked")
 	sh := reflect.SliceHeader{
 		Data: uintptr(unsafe.Pointer(outSamples)),
 		Len:  len(p.readBuf),
